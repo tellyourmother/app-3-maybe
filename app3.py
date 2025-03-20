@@ -29,7 +29,7 @@ def get_team_abbreviation(team_id):
             return team['abbreviation']
     return None
 
-# Fetch player game logs
+# Fetch game logs with filters
 def get_game_logs(player_name, last_n_games=15, location_filter="All"):
     player_id = get_player_id(player_name)
     if not player_id:
@@ -51,13 +51,12 @@ def get_game_logs(player_name, last_n_games=15, location_filter="All"):
 
     return df.head(last_n_games)
 
-# Fetch logs against a specific opponent
+# Fetch game logs vs specific team
 def get_game_logs_vs_team(player_name, opponent_name, seasons):
     player_id = get_player_id(player_name)
     opponent_id = get_team_id(opponent_name)
     
     if not player_id or not opponent_id:
-        st.warning("⚠️ Player or Team not found! Check the name.")
         return None
 
     opponent_abbreviation = get_team_abbreviation(opponent_id)
@@ -105,29 +104,25 @@ def plot_combined_graphs(df, matchup_df, player_name, opponent_name):
     df["Game Label"] = df["GAME_DATE"].dt.strftime('%b %d') + " vs " + df["OPPONENT"] + " (" + df["LOCATION"] + ")"
 
     avg_pts, avg_reb, avg_ast = df["PTS"].mean(), df["REB"].mean(), df["AST"].mean()
-    colors_pts = ["#4CAF50" if pts > avg_pts else "#2196F3" for pts in df["PTS"]]
-    colors_reb = ["#FFA726" if reb > avg_reb else "#FFEB3B" for reb in df["REB"]]
-    colors_ast = ["#AB47BC" if ast > avg_ast else "#9575CD" for ast in df["AST"]]
 
     # Points
-    fig.add_trace(go.Bar(x=df["Game Label"], y=df["PTS"], marker=dict(color=colors_pts)), row=1, col=1)
+    fig.add_trace(go.Bar(x=df["Game Label"], y=df["PTS"], marker=dict(color="blue")), row=1, col=1)
 
     # Rebounds
-    fig.add_trace(go.Bar(x=df["Game Label"], y=df["REB"], marker=dict(color=colors_reb)), row=1, col=2)
+    fig.add_trace(go.Bar(x=df["Game Label"], y=df["REB"], marker=dict(color="green")), row=1, col=2)
 
     # Assists
-    fig.add_trace(go.Bar(x=df["Game Label"], y=df["AST"], marker=dict(color=colors_ast)), row=2, col=1)
+    fig.add_trace(go.Bar(x=df["Game Label"], y=df["AST"], marker=dict(color="purple")), row=2, col=1)
 
     # PRA
     df["PRA"] = df["PTS"] + df["REB"] + df["AST"]
-    colors_pra = ["#FF3D00" if pra > df["PRA"].mean() else "#FF8A65" for pra in df["PRA"]]
-    fig.add_trace(go.Bar(x=df["Game Label"], y=df["PRA"], marker=dict(color=colors_pra)), row=2, col=2)
+    fig.add_trace(go.Bar(x=df["Game Label"], y=df["PRA"], marker=dict(color="orange")), row=2, col=2)
 
     # PRA vs Opponent
     if matchup_df is not None and not matchup_df.empty:
         matchup_df["GAME_DATE"] = pd.to_datetime(matchup_df["GAME_DATE"])
         matchup_df["PRA"] = matchup_df["PTS"] + matchup_df["REB"] + matchup_df["AST"]
-        fig.add_trace(go.Bar(x=matchup_df["GAME_DATE"].dt.strftime('%Y-%m-%d'), y=matchup_df["PRA"], marker=dict(color="#FF6F00")), row=3, col=1)
+        fig.add_trace(go.Bar(x=matchup_df["GAME_DATE"].dt.strftime('%Y-%m-%d'), y=matchup_df["PRA"], marker=dict(color="red")), row=3, col=1)
 
     fig.update_layout(title_text=f"{player_name} Performance Analysis", template="plotly_dark", height=1000, width=1400)
     st.plotly_chart(fig)
@@ -150,7 +145,13 @@ matchup_df = get_game_logs_vs_team(player_name, opponent_name, ["2024-25", "2023
 
 # Show DataFrame
 if df is not None:
+    st.subheader(f"📊 Last 15 {location_filter} Games - {player_name}")
     st.dataframe(df[['GAME_DATE', 'MATCHUP', 'LOCATION', 'OPPONENT', 'PTS', 'REB', 'AST']])
+
+# Show matchup DataFrame
+if matchup_df is not None and not matchup_df.empty:
+    st.subheader(f"🔥 {player_name} vs {opponent_name} (Last 3 Seasons)")
+    st.dataframe(matchup_df[['GAME_DATE', 'MATCHUP', 'LOCATION', 'PRA']])
 
 # Plot Graphs
 plot_combined_graphs(df, matchup_df, player_name, opponent_name)
