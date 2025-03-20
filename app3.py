@@ -51,21 +51,52 @@ def get_game_logs(player_name, last_n_games=15, location_filter="All"):
 
     return df.head(last_n_games)
 
+# Fetch logs against a specific opponent
+def get_game_logs_vs_team(player_name, opponent_name, seasons):
+    player_id = get_player_id(player_name)
+    opponent_id = get_team_id(opponent_name)
+    
+    if not player_id or not opponent_id:
+        st.warning("⚠️ Player or Team not found! Check the name.")
+        return None
+
+    opponent_abbreviation = get_team_abbreviation(opponent_id)
+    
+    all_logs = []
+    for season in seasons:
+        gamelog = PlayerGameLog(player_id=player_id, season=season)
+        df = gamelog.get_data_frames()[0]
+        
+        # Filter only games against the specific opponent
+        df = df[df["MATCHUP"].str.contains(opponent_abbreviation)]
+        
+        # Extract opponent and home/away info
+        df["LOCATION"] = df["MATCHUP"].apply(lambda x: "Home" if " vs. " in x else "Away")
+        df["OPPONENT"] = opponent_name
+
+        all_logs.append(df)
+
+    return pd.concat(all_logs, ignore_index=True) if all_logs else None
+
 # Visualization
-def plot_combined_graphs(df, player_name):
+def plot_combined_graphs(df, matchup_df, player_name, opponent_name):
     if df is None or df.empty:
         st.warning("⚠️ No data available for selected filters.")
         return
 
     fig = make_subplots(
-        rows=2, cols=2, 
+        rows=3, cols=2, 
         subplot_titles=[
             f"🏀 {player_name} - Points (PTS)",
             f"📊 {player_name} - Rebounds (REB)",
             f"🎯 {player_name} - Assists (AST)",
-            f"🔥 {player_name} - PRA (Points + Rebounds + Assists)"
+            f"🔥 {player_name} - PRA (PTS+REB+AST)",
+            f"⚔️ {player_name} vs. {opponent_name} - PRA (Last 3 Seasons)"
         ],
-        horizontal_spacing=0.12, vertical_spacing=0.15
+        horizontal_spacing=0.12, vertical_spacing=0.15,
+        specs=[[{"type": "bar"}, {"type": "bar"}],
+               [{"type": "bar"}, {"type": "bar"}],
+               [{"type": "bar", "colspan": 2}, None]]
     )
 
     df["GAME_DATE"] = pd.to_datetime(df["GAME_DATE"])
@@ -80,25 +111,25 @@ def plot_combined_graphs(df, player_name):
 
     # Points
     fig.add_trace(go.Bar(x=df["Game Label"], y=df["PTS"], marker=dict(color=colors_pts)), row=1, col=1)
-    fig.add_hline(y=avg_pts, line_dash="dash", line_color="gray", row=1, col=1, annotation_text=f"Avg PTS: {avg_pts:.1f}")
 
     # Rebounds
     fig.add_trace(go.Bar(x=df["Game Label"], y=df["REB"], marker=dict(color=colors_reb)), row=1, col=2)
-    fig.add_hline(y=avg_reb, line_dash="dash", line_color="gray", row=1, col=2, annotation_text=f"Avg REB: {avg_reb:.1f}")
 
     # Assists
     fig.add_trace(go.Bar(x=df["Game Label"], y=df["AST"], marker=dict(color=colors_ast)), row=2, col=1)
-    fig.add_hline(y=avg_ast, line_dash="dash", line_color="gray", row=2, col=1, annotation_text=f"Avg AST: {avg_ast:.1f}")
 
     # PRA
     df["PRA"] = df["PTS"] + df["REB"] + df["AST"]
-    avg_pra = df["PRA"].mean()
-    colors_pra = ["#FF3D00" if pra > avg_pra else "#FF8A65" for pra in df["PRA"]]
-
+    colors_pra = ["#FF3D00" if pra > df["PRA"].mean() else "#FF8A65" for pra in df["PRA"]]
     fig.add_trace(go.Bar(x=df["Game Label"], y=df["PRA"], marker=dict(color=colors_pra)), row=2, col=2)
-    fig.add_hline(y=avg_pra, line_dash="dash", line_color="gray", row=2, col=2, annotation_text=f"Avg PRA: {avg_pra:.1f}")
 
-    fig.update_layout(title_text=f"{player_name} Performance Analysis", template="plotly_dark", height=800, width=1200)
+    # PRA vs Opponent
+    if matchup_df is not None and not matchup_df.empty:
+        matchup_df["GAME_DATE"] = pd.to_datetime(matchup_df["GAME_DATE"])
+        matchup_df["PRA"] = matchup_df["PTS"] + matchup_df["REB"] + matchup_df["AST"]
+        fig.add_trace(go.Bar(x=matchup_df["GAME_DATE"].dt.strftime('%Y-%m-%d'), y=matchup_df["PRA"], marker=dict(color="#FF6F00")), row=3, col=1)
+
+    fig.update_layout(title_text=f"{player_name} Performance Analysis", template="plotly_dark", height=1000, width=1400)
     st.plotly_chart(fig)
 
 # Streamlit UI
@@ -110,14 +141,16 @@ player_name = st.text_input("Enter player name:", "LeBron James")
 # Location filter
 location_filter = st.radio("Filter Games:", ["All", "Home", "Away"], index=0)
 
+# Select an opponent for PRA comparison
+opponent_name = st.selectbox("Select opponent team for PRA analysis:", ["Lakers", "Warriors", "Celtics", "Bucks", "Nuggets"])
+
 # Fetch Data
 df = get_game_logs(player_name, last_n_games=15, location_filter=location_filter)
+matchup_df = get_game_logs_vs_team(player_name, opponent_name, ["2024-25", "2023-24", "2022-23"])
 
 # Show DataFrame
 if df is not None:
-    st.subheader(f"📊 Last 15 {location_filter} Games - {player_name}")
     st.dataframe(df[['GAME_DATE', 'MATCHUP', 'LOCATION', 'OPPONENT', 'PTS', 'REB', 'AST']])
 
 # Plot Graphs
-plot_combined_graphs(df, player_name)
-
+plot_combined_graphs(df, matchup_df, player_name, opponent_name)
