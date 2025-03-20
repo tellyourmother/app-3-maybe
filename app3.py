@@ -4,6 +4,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from nba_api.stats.endpoints import PlayerGameLog
 from nba_api.stats.static import players, teams
+from sklearn.linear_model import LinearRegression
+import numpy as np
 
 # Retrieve player ID
 def get_player_id(player_name):
@@ -19,14 +21,6 @@ def get_team_id(team_name):
     for team in team_list:
         if team['full_name'].lower() == team_name.lower():
             return team['id']
-    return None
-
-# Retrieve team abbreviation
-def get_team_abbreviation(team_id):
-    team_list = teams.get_teams()
-    for team in team_list:
-        if team['id'] == team_id:
-            return team['abbreviation']
     return None
 
 # Fetch player game logs
@@ -50,6 +44,27 @@ def get_game_logs(player_name, last_n_games=15, location_filter="All"):
         df = df[df["LOCATION"] == "Away"]
 
     return df.head(last_n_games)
+
+# AI Prediction Model
+def predict_next_game(df):
+    if df is None or len(df) < 5:  # Ensure we have enough data
+        st.warning("⚠️ Not enough data for prediction.")
+        return None
+
+    df = df[::-1]  # Reverse for chronological order
+    df[['PTS', 'REB', 'AST']] = df[['PTS', 'REB', 'AST']].apply(pd.to_numeric)
+
+    X = np.arange(len(df)).reshape(-1, 1)  # Game indices as feature
+    predicted_stats = {}
+
+    for stat in ['PTS', 'REB', 'AST']:
+        y = df[stat].values
+        model = LinearRegression()
+        model.fit(X, y)
+        next_game_index = np.array([[len(df)]])  # Predict the next game
+        predicted_stats[stat] = model.predict(next_game_index)[0]
+
+    return predicted_stats
 
 # Visualization
 def plot_combined_graphs(df, player_name):
@@ -118,6 +133,15 @@ if df is not None:
     st.subheader(f"📊 Last 15 {location_filter} Games - {player_name}")
     st.dataframe(df[['GAME_DATE', 'MATCHUP', 'LOCATION', 'OPPONENT', 'PTS', 'REB', 'AST']])
 
+# Predict next game
+st.subheader(f"🔮 {player_name}'s Predicted Next Game Performance")
+predicted_stats = predict_next_game(df)
+
+if predicted_stats:
+    st.write(f"**📌 Predicted Points:** {predicted_stats['PTS']:.1f}")
+    st.write(f"**🏀 Predicted Rebounds:** {predicted_stats['REB']:.1f}")
+    st.write(f"**🎯 Predicted Assists:** {predicted_stats['AST']:.1f}")
+    st.write(f"🔥 **Predicted PRA:** {predicted_stats['PTS'] + predicted_stats['REB'] + predicted_stats['AST']:.1f}")
+
 # Plot Graphs
 plot_combined_graphs(df, player_name)
-
