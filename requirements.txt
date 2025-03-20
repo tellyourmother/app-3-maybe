@@ -1,6 +1,0 @@
-streamlit
-nba_api
-pandas
-plotly
-numpy
-scikit-learn
